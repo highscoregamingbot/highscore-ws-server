@@ -91,10 +91,13 @@ async def websocket_endpoint(websocket: WebSocket):
         # Hoofdlus: berichten ontvangen en doorsturen
         while True:
             raw = await websocket.receive_text()
-            
+            print(f"📨 Received from {player_id}: {raw}")  # ⬅️ VOEG TOE
+
             try:
                 data = json.loads(raw)
+                print(f"📦 Parsed data: {data}")  # ⬅️ VOEG TOE
             except json.JSONDecodeError:
+                print(f"❌ Invalid JSON from {player_id}")  # ⬅️ VOEG TOE
                 continue
             
             # ⬇️ NIEUW: Check voor player_ready event
