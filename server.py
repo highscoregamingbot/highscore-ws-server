@@ -137,8 +137,11 @@ async def websocket_endpoint(websocket: WebSocket):
             "match_id": match_id
         })
         for other in room.other_players(player_id):
-            await other.websocket.send_text(leave_message)
+            try:
+                await other.websocket.send_text(leave_message)
+            except:
+                pass
 
         # Ruim lege room op
-        if len(room.players) == 0:
+        if len(room.players) == 0 and match_id in rooms:
             del rooms[match_id]
