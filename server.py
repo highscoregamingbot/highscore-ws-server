@@ -73,7 +73,7 @@ async def websocket_endpoint(websocket: WebSocket):
         rooms[match_id] = room
         logger.info(f"🆕 Created room: {match_id}")
 
-    # Als speler opnieuw joint, reset ALLES
+    # Als speler opnieuw joint
     if player_id in room.players:
         logger.info(f"🔄 {player_id} is reconnecting")
         
@@ -87,10 +87,11 @@ async def websocket_endpoint(websocket: WebSocket):
         # Verwijder speler
         room.remove_player(player_id)
         
-        # RESET ready state voor HELE room
-        room.ready_players.clear()
+        # Verwijder alleen DEZE speler uit ready set
+        if player_id in room.ready_players:
+            room.ready_players.discard(player_id)  # ⬅️ ALLEEN deze speler
         
-        logger.info("🔄 Room reset - all players must send ready again")
+        logger.info(f"🔄 {player_id} must send ready again")
 
     # Als room vol is (2 spelers) EN dit is een nieuwe speler
     if room.is_full() and player_id not in room.players:
