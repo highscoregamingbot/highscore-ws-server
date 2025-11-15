@@ -50,7 +50,6 @@ async def health():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # Query params uitlezen
     match_id = websocket.query_params.get("match_id")
     player_id = websocket.query_params.get("player_id")
 
@@ -59,14 +58,26 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     await websocket.accept()
+    print(f"✅ {player_id} connected to {match_id}")
 
     # Room ophalen of maken
     room = rooms.get(match_id)
     if room is None:
         room = MatchRoom(match_id)
         rooms[match_id] = room
+        print(f"🆕 Created room: {match_id}")
 
-    # Als room vol is -> disconnect
+    # ⬇️ NIEUW: Als speler opnieuw joint, verwijder oude connectie
+    if player_id in room.players:
+        print(f"🔄 {player_id} reconnecting - removing old connection")
+        old_conn = room.players[player_id]
+        try:
+            await old_conn.websocket.close()
+        except:
+            pass
+        room.remove_player(player_id)
+
+    # Als room vol is (2 spelers) EN dit is een nieuwe speler
     if room.is_full() and player_id not in room.players:
         await websocket.send_text(json.dumps({
             "type": "error",
@@ -77,6 +88,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     conn = PlayerConnection(websocket, player_id)
     room.add_player(conn)
+    print(f"👥 Room {match_id} now has {len(room.players)} player(s)")
 
     # Laat andere speler weten dat deze joined
     join_message = json.dumps({
@@ -88,24 +100,23 @@ async def websocket_endpoint(websocket: WebSocket):
         await other.websocket.send_text(join_message)
 
     try:
-        # Hoofdlus: berichten ontvangen en doorsturen
         while True:
             raw = await websocket.receive_text()
-            print(f"📨 Received from {player_id}: {raw}")  # ⬅️ VOEG TOE
-
+            
             try:
                 data = json.loads(raw)
-                print(f"📦 Parsed data: {data}")  # ⬅️ VOEG TOE
             except json.JSONDecodeError:
-                print(f"❌ Invalid JSON from {player_id}")  # ⬅️ VOEG TOE
                 continue
             
-            # ⬇️ NIEUW: Check voor player_ready event
+            # Check voor player_ready event
             if isinstance(data, dict) and data.get("type") == "player_ready":
+                print(f"🟢 {player_id} is ready")
                 is_match_ready = room.mark_ready(player_id)
                 
+                print(f"📊 Ready: {len(room.ready_players)}/{len(room.players)}")
+                
                 if is_match_ready:
-                    # Beide spelers zijn ready - stuur match_start naar IEDEREEN
+                    print(f"🎮 MATCH START for {match_id}!")
                     match_start_msg = json.dumps({
                         "type": "match_start",
                         "match_id": match_id
@@ -114,26 +125,24 @@ async def websocket_endpoint(websocket: WebSocket):
                     for pid, conn in room.players.items():
                         await conn.websocket.send_text(match_start_msg)
                 
-                # Ga door naar volgende iteratie (stuur player_ready niet door)
                 continue
             
-            # Voeg eventueel match_id/player_id toe
+            # Voeg match_id/player_id toe
             if isinstance(data, dict):
                 data.setdefault("match_id", match_id)
                 data.setdefault("from_player_id", player_id)
             
             message = json.dumps(data)
             
-            # Stuur door naar andere speler(s) in dezelfde room
+            # Stuur door naar andere speler(s)
             for other in room.other_players(player_id):
                 await other.websocket.send_text(message)
                 
     except WebSocketDisconnect:
-
-        # Speler is weg
+        print(f"❌ {player_id} disconnected from {match_id}")
         room.remove_player(player_id)
 
-        # Laat andere speler weten dat hij weg is
+        # Laat andere speler weten
         leave_message = json.dumps({
             "type": "player_left",
             "player_id": player_id,
@@ -145,6 +154,8 @@ async def websocket_endpoint(websocket: WebSocket):
             except:
                 pass
 
-        # Ruim lege room op
-        if len(room.players) == 0 and match_id in rooms:
-            del rooms[match_id]
+        # ⬇️ CLEANUP: Verwijder lege rooms
+        if len(room.players) == 0:
+            if match_id in rooms:
+                del rooms[match_id]
+                print(f"🗑️ Deleted empty room: {match_id}")
