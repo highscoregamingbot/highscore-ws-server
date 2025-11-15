@@ -1,8 +1,14 @@
 # server.py
 import json
+import logging
 from typing import Dict, Set
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
+
+
+# ⬇️ NIEUW: Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -58,18 +64,18 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     await websocket.accept()
-    print(f"✅ {player_id} connected to {match_id}")
+    logger.info(f"✅ {player_id} connected to {match_id}")
 
     # Room ophalen of maken
     room = rooms.get(match_id)
     if room is None:
         room = MatchRoom(match_id)
         rooms[match_id] = room
-        print(f"🆕 Created room: {match_id}")
+        logger.info(f"🆕 Created room: {match_id}")
 
     # ⬇️ NIEUW: Als speler opnieuw joint, verwijder oude connectie
     if player_id in room.players:
-        print(f"🔄 {player_id} reconnecting - removing old connection")
+        logger.info(f"🔄 {player_id} reconnecting - removing old connection")
         old_conn = room.players[player_id]
         try:
             await old_conn.websocket.close()
@@ -88,7 +94,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     conn = PlayerConnection(websocket, player_id)
     room.add_player(conn)
-    print(f"👥 Room {match_id} now has {len(room.players)} player(s)")
+    logger.info(f"👥 Room {match_id} now has {len(room.players)} player(s)")
 
     # Laat andere speler weten dat deze joined
     join_message = json.dumps({
@@ -110,13 +116,13 @@ async def websocket_endpoint(websocket: WebSocket):
             
             # Check voor player_ready event
             if isinstance(data, dict) and data.get("type") == "player_ready":
-                print(f"🟢 {player_id} is ready")
+                logger.info(f"🟢 {player_id} is ready")
                 is_match_ready = room.mark_ready(player_id)
                 
-                print(f"📊 Ready: {len(room.ready_players)}/{len(room.players)}")
+                logger.info(f"📊 Ready: {len(room.ready_players)}/{len(room.players)}")
                 
                 if is_match_ready:
-                    print(f"🎮 MATCH START for {match_id}!")
+                    logger.info(f"🎮 MATCH START for {match_id}!")
                     match_start_msg = json.dumps({
                         "type": "match_start",
                         "match_id": match_id
@@ -139,7 +145,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await other.websocket.send_text(message)
                 
     except WebSocketDisconnect:
-        print(f"❌ {player_id} disconnected from {match_id}")
+        logger.info(f"❌ {player_id} disconnected from {match_id}")
         room.remove_player(player_id)
 
         # Laat andere speler weten
@@ -158,4 +164,4 @@ async def websocket_endpoint(websocket: WebSocket):
         if len(room.players) == 0:
             if match_id in rooms:
                 del rooms[match_id]
-                print(f"🗑️ Deleted empty room: {match_id}")
+                logger.info(f"🗑️ Deleted empty room: {match_id}")
