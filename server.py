@@ -133,10 +133,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if is_match_ready:
                     logger.info(f"🎮 MATCH START for {match_id}!")
+                    # Bepaal host & client op basis van volgorde in join
+                    player_ids = list(room.players.keys())   # volgorde gegarandeerd door Python 3.7+
+
+                    host_id = player_ids[0]
+                    client_id = player_ids[1] if len(player_ids) > 1 else None
+
                     match_start_msg = json.dumps({
                         "type": "match_start",
-                        "match_id": match_id
+                        "match_id": match_id,
+                        "host": host_id,
+                        "client": client_id
                     })
+
                     
                     for pid, conn in room.players.items():
                         await conn.websocket.send_text(match_start_msg)
